@@ -1,0 +1,93 @@
+typedef int(__fastcall *TControlRotationSetFunc)(void* a1, void* a2);
+TControlRotationSetFunc oControlRotationFunc;
+...
+void CLoader::InstallHooks( void )
+{
+	oControlRotationFunc = (TControlRotationSetFunc)DetourFunction(hGameBase + 0x2132A90, (BYTE*)&CLoader::ControlRotationHook, 10);
+}
+...
+int CLoader::ControlRotationHook(void* a1, void* a2)
+{
+	//APlayerController* pCont = (APlayerController*)a1;
+	//FRotator* angles = (FRotator*)a2;
+	//LOG("angles Pitch = %f, Yaw =%f", angles->Pitch, angles->Yaw);
+	//LOG("Before FRot Pitch = %f, Yaw =%f", pCont->ControlRotation.Pitch, pCont->ControlRotation.Yaw);
+	int result = 0;
+	if (g_pMyHack && g_pMyHack->m_pAimBotRotation) {
+		FRotator* angles = (FRotator*)a2;
+		angles->Pitch = g_pMyHack->m_pAimBotRotation->Pitch;
+		angles->Yaw = g_pMyHack->m_pAimBotRotation->Yaw;
+ 
+		//LOG("setup ab Pitch = %f, Yaw =%f", angles->Pitch, angles->Yaw);
+		result = g_pLoader->oControlRotationFunc(a1, angles);
+	} else {
+		result = g_pLoader->oControlRotationFunc(a1, a2);
+	}
+	//LOG("After FRot Pitch = %f, Yaw =%f", pCont->ControlRotation.Pitch, pCont->ControlRotation.Yaw);
+	return result;
+}
+...
+	FRotator*m_pAimBotRotation = NULL;
+...
+void CMyHack::RenderFrame()
+{
+	if (m_pAimBotRotation) {
+		delete m_pAimBotRotation;
+		m_pAimBotRotation = NULL;
+	}
+	...
+	//your render frame code there
+}
+...
+void CMyHack::LookAt(APlayerController* pController, FVector position)
+{
+	Vector* localPos = (Vector*)&pController->PlayerCameraManager->TransformComponent->Position;
+	Vector* pPosition = (Vector*)&position;
+	Vector relativePos = *pPosition - *localPos;
+	FRotator aimRot;
+	aimRot.Yaw = atan2(relativePos.Y, relativePos.X) * 180.0f / M_PI;
+	aimRot.Pitch = -((acos(relativePos.Z / Get3DDistance((float*)localPos, (float*)&position)) * 180.0f / M_PI) - 90.0f);
+	aimRot = aimRot.GetNormalized();
+ 
+	if (aimRot.Pitch < 0.0f)
+		return;
+	if (aimRot.Pitch > 359.9f)
+		return;
+	if (aimRot.Pitch > 84.9f && aimRot.Pitch < 275.0f)
+		return;
+	if (aimRot.Yaw > 359.9)
+		return;
+	if (aimRot.Yaw < 0.0f)
+		return;
+ 
+	m_pAimBotRotation = new FRotator();
+	m_pAimBotRotation->Pitch = aimRot.Pitch;
+	m_pAimBotRotation->Yaw = aimRot.Yaw;
+	m_pAimBotRotation->Roll = pController->ControlRotation.Roll;
+}
+...
+FORCEINLINE float FRotator::ClampAxis(float Angle)
+{
+	// returns Angle in the range (-360,360)
+	Angle = fmod(Angle, 360.f);
+ 
+	if (Angle < 0.f)
+	{
+		// shift to [0,360) range
+		Angle += 360.f;
+	}
+ 
+	return Angle;
+}
+FORCEINLINE void FRotator::Normalize()
+{
+	Pitch = ClampAxis(Pitch);
+	Yaw = ClampAxis(Yaw);
+	Roll = ClampAxis(Roll);
+}
+FORCEINLINE FRotator FRotator::GetNormalized() const
+{
+	FRotator Rot = *this;
+	Rot.Normalize();
+	return Rot;
+}
